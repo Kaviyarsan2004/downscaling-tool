@@ -9,12 +9,12 @@ import os
 from shapely import wkt
 import matplotlib.pyplot as plt
 
-capacity_file = r"sample_data\combined_capacity_MGA_min.csv"#path to cluster specific capacity result for solar for each region file
-CPAID_lcoe_pv = r"sample_data\solar_lcoe_ipm_metro_county.csv" #path to map of cluster to cpa connection file
-CPAID_lcoe_onshore = r"sample_data\onshorewind_lcoe_ipm_metro_county.csv" #path to map of cluster to cpa connection file
-folder_path = r"sample_data\extra_outputs\extra_outputs" 
-CandidateProjectArea_SolarPV=pd.read_csv(r"sample_data\CandidateProjectArea_SolarPV.csv")
-CandidateProjectArea_OnshoreWind=pd.read_csv(r"sample_data\CandidateProjectArea_OnshoreWind.csv")
+capacity_file = r"sample_data\combined_capacity_MGA_min.csv"#path to capacity expansion data 
+CPAID_lcoe_pv = r"sample_data\solar_lcoe_ipm_metro_county.csv" #path to solar CPA's data
+CPAID_lcoe_onshore = r"sample_data\onshorewind_lcoe_ipm_metro_county.csv" #path to wind CPA's data
+folder_path = r"sample_data\extra_outputs\extra_outputs"  #path to cpa to cluster mapping data folder
+CandidateProjectArea_SolarPV=pd.read_csv(r"sample_data\CandidateProjectArea_SolarPV.csv") #path to solar CPA Geomentry data
+CandidateProjectArea_OnshoreWind=pd.read_csv(r"sample_data\CandidateProjectArea_OnshoreWind.csv") #path to wind CPA Geomentry data
 
 
 def load_lcoe_data() -> pd.DataFrame:
@@ -103,14 +103,12 @@ def randomly_select_cluster( df : pd.DataFrame, tech: str):
         ]
         sampled_dfs.append(final_df)
 
-    # Combine all the sampled and merged dataframes
     merged_df = pd.concat(sampled_dfs)
     merged_df.reset_index(drop=True, inplace=True)
     return merged_df
 
 def find_and_read_matching_file(region, technology):
     
-    # Construct the pattern to search for in file names
     pattern = f"{region}_{technology.split('_')[0]}"
     
     # Check all files in the folder
@@ -122,7 +120,7 @@ def find_and_read_matching_file(region, technology):
         df = pd.read_csv(file_path)
         return df
     else:
-        return pd.DataFrame(), None  # Return an empty DataFrame and None if no matching file found
+        return pd.DataFrame(), None 
 
 
 def select_lcoe_cpas(
@@ -134,7 +132,6 @@ def select_lcoe_cpas(
     lcoe_df_onshore: pd.DataFrame
 ) -> pd.DataFrame:
     """Select CPAs based on LCOE values and cluster capacity."""
-    # Normalize column names to a consistent case (lowercase in this example)
     if(technology=="UtilityPV_Class1_Moderate_"):
         lcoe_df=lcoe_df_pv
     else:
@@ -187,21 +184,17 @@ def optimize_program(capacity_file: str) -> None:
 
 
         
-       # Convert the list of dataframes to a single dataframe for this iteration
         iter_selected_cpas_df = pd.concat(iter_selected_cpas, ignore_index=True)
-        # Filtering and random selection for UtilityPV_Class1_Moderate_
         selected_solar_cpas_df = iter_selected_cpas_df[iter_selected_cpas_df['technology'] == 'UtilityPV_Class1_Moderate_']
         if len(selected_solar_cpas_df.index) > 1:
             selected_solar_cpas_df =  randomly_select_cluster(selected_solar_cpas_df, 'utilitypv')
         selected_cpas_1.append(selected_solar_cpas_df)
 
-        # Filtering and random selection for LandbasedWind
         selected_wind_cpas_df = iter_selected_cpas_df[iter_selected_cpas_df['technology'] == 'LandbasedWind']
         if len(selected_wind_cpas_df.index) > 1:
             selected_wind_cpas_df = randomly_select_cluster(selected_wind_cpas_df, 'onshore_wind')
         selected_cpas_1.append(selected_wind_cpas_df)
 
-    # Convert the list of dataframes to a single dataframe after the loop if needed
     derated_selected_cpas_df = pd.concat(selected_cpas_1, ignore_index=True)
     derated_selected_cpas = pd.merge(derated_selected_cpas_df,   capacity_df, on=["Resource","Zone","iter","technology"], how='inner') 
     derated_selected_cpas = derated_selected_cpas[desired_columns]
@@ -215,12 +208,13 @@ def optimize_program(capacity_file: str) -> None:
 
 
     print(type(derated_selected_cpas))
-    selected_solar = derated_selected_cpas[derated_selected_cpas['technology'] == 'UtilityPV_Class1_Moderate_']
+    selected_solar = derated_selected_cpas[(derated_selected_cpas['technology'] == 'UtilityPV_Class1_Moderate_') & 
+                                            (derated_selected_cpas['state'] == "New York")]
     selected_solar=pd.merge(selected_solar, CandidateProjectArea_SolarPV[['CPA_ID', 'geometry']], on='CPA_ID', how="left")
     selected_solar.to_csv("selected_cpa_solar_geo.csv")
     selected_solar['geometry'] = selected_solar['geometry'].apply(wkt.loads)
     solar_gdf = gpd.GeoDataFrame(selected_solar, geometry='geometry')
-    solar_gdf.set_crs(epsg=5070, inplace=True)  # WGS84
+    solar_gdf.set_crs(epsg=5070, inplace=True)  
 
     output_folder = 'shapefile_solar'
     os.makedirs(output_folder, exist_ok=True)
@@ -231,7 +225,8 @@ def optimize_program(capacity_file: str) -> None:
     print(f"Shapefile saved to {shapefile_path}")
 
     
-    selected_wind = derated_selected_cpas[derated_selected_cpas['technology'] == 'LandbasedWind']
+    selected_wind = derated_selected_cpas[(derated_selected_cpas['technology'] == 'LandbasedWind') &
+                                          (derated_selected_cpas['region'].str.startswith('NY'))]
     selected_wind=pd.merge(selected_wind, CandidateProjectArea_OnshoreWind[['CPA_ID', 'geometry']], on='CPA_ID', how="left")
     selected_wind.to_csv("selected_cpa_wind_geo.csv")
     
@@ -256,7 +251,7 @@ def optimize_program(capacity_file: str) -> None:
 
     # Plotting
     fig, ax = plt.subplots(figsize=(12, 12))
-    IPM_regions.plot(ax=ax, color='#EBD5E7', edgecolor='#EBD5E7', alpha=0.5, label='IPM Regions')
+    IPM_regions.plot(ax=ax, color='#EBD5E7', edgecolor='black', alpha=0.5, label='IPM Regions')
     solar_gdf.plot(ax=ax, color='red', edgecolor='red', alpha=0.5, label='Solar')
     wind_gdf.plot(ax=ax, color='blue', edgecolor='blue', alpha=0.5, label='Wind')
 
@@ -265,7 +260,7 @@ def optimize_program(capacity_file: str) -> None:
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
 
-    plt.savefig('output_image_1.pdf')
+    plt.savefig('output\output_image_1.pdf')
     plt.show()
 
 

@@ -18,13 +18,13 @@ CandidateProjectArea_OnshoreWind=pd.read_csv(r"sample_data\CandidateProjectArea_
 
 
 def load_lcoe_data() -> pd.DataFrame:
-    """Load capacity data from the given file."""
+    """Load CPA's data from the given file."""
     lcoe_df_pv = pd.read_csv(CPAID_lcoe_pv, low_memory=False)
     lcoe_df_onshore = pd.read_csv(CPAID_lcoe_onshore, low_memory=False)
     return lcoe_df_pv, lcoe_df_onshore
 
 def load_capacity_data(cluster_file: str) -> pd.DataFrame:
-    """Load cluster assignments from the given file."""
+    """Load capacity from the given file."""
     df = pd.read_csv(cluster_file)
     generator_data=pd.read_csv(r"C:\Users\kavi5\Enhancing_Resilient_Solar_Power\git\down_scaling\sample_data\Generators_data.csv")
 
